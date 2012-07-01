@@ -76,8 +76,8 @@ def reaction_elim(states, ideal_gas, atol, rtol):
     for k in range(0, len(states)):
 
         # Calculate condition-dependent data
-        ideal_gas.setTemperature(sys_state[k][0])
-        ideal_gas.setMassFractions(sys_state[k][1:])
+        ideal_gas.setTemperature(states[k][0])
+        ideal_gas.setMassFractions(states[k][1:])
         rxn_rate = ideal_gas.netRatesOfProgress()
         cp_mass = ideal_gas.cp_mass()
         enthalpy_mass = ideal_gas.enthalpies_RT() * \
