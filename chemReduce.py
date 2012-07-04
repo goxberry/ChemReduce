@@ -12,6 +12,126 @@ import pulp
 # Optional:
 # Installed LP solvers (Gurobi, CPLEX, CBC, COIN)
 
+def calc_cond_indep_data(ideal_gas):
+    """
+    Purpose: Calculate the condition-independent data needed for reaction
+    elimination: the molar mass-stoichiometric matrix product
+
+    Arguments:
+    ideal_gas (Cantera.Solution): Cantera.Solution object specifying
+    a chemical reaction mechanism and the thermodynamic properties of
+    its constituent species
+
+    Returns:
+    mass_stoich_prod (2-D numpy.ndarray of floats): product of diagonal
+    matrix of molar masses and stoichiometry matrix
+    """
+
+    molar_mass = ideal_gas.molarMasses()
+    stoich_matrix = (ideal_gas.productStoichCoeffs() -
+        ideal_gas.reactantStoichCoeffs())
+    mass_stoich_prod = numpy.dot(numpy.diag(molar_mass), stoich_matrix)
+
+    return mass_stoich_prod
+
+def calc_cond_dep_data(state, ideal_gas):
+    """
+    Purpose: Calculate the condition-dependent data needed for reaction
+    elimination:
+    - species mass enthalpies
+    - reaction rates
+    - mass-based constant pressure heat capacity
+    - mass density
+
+    Arguments:
+    state (list of floats, or 1-D numpy.ndarray of floats): Reaction
+    conditions consisting of temperature and species mass fractions
+    (in the order that they are specified in the Cantera mechanism).
+    Temperature must be the first element in the system state list
+    (or 1-D numpy.ndarray); subsequent elements must be species mass
+    fractions, in the order that they are specified in the Cantera
+    mechanism.
+    ideal_gas (Cantera.Solution): Cantera.Solution object specifying a
+    chemical reaction mechanism and the thermodynamic properties of its
+    constituent species; uses state of ideal_gas to calculate properties
+
+    Returns:
+    rxn_rate (1-D numpy.ndarray of floats): (row) vector of reaction rates
+    cp_mass (float): mass-based constant pressure heat capacity
+    enthalpy_mass (1-D numpy.ndarray of floats): (row) vector of species
+        mass (or specific) enthalpies
+    rho (float): mass density
+
+    """
+    
+    ideal_gas.setTemperature(state[0])
+    ideal_gas.setMassFractions(state[1:])
+    
+    rxn_rate = ideal_gas.netRatesOfProgress()
+    cp_mass = ideal_gas.cp_mass()
+    enthalpy_mass = (ideal_gas.enthalpies_RT() *
+        ideal_gas.temperature() * Cantera.GasConstant)
+    rho = ideal_gas.density()
+    
+    return (rxn_rate, cp_mass, enthalpy_mass, rho)
+
+def error_constraint_data(state, ideal_gas, mass_stoich_prod, atol, rtol):
+    """
+    Purpose: Calculates all of the coefficients for the error constraints
+    in the point-constrained reaction and species elimination integer
+    linear programming formulations.
+
+    Arguments:
+    state (list of floats, or 1-D numpy.ndarray of floats): Reaction
+    conditions consisting of temperature and species mass fractions
+    (in the order that they are specified in the Cantera mechanism).
+    Temperature must be the first element in the system state list
+    (or 1-D numpy.ndarray); subsequent elements must be species mass
+    fractions, in the order that they are specified in the Cantera
+    mechanism.
+    ideal_gas (Cantera.Solution): Cantera.Solution object specifying a
+    chemical reaction mechanism and the thermodynamic properties of its
+    constituent species; uses state of ideal_gas to calculate properties
+    atol (1-D numpy.ndarray of floats): list of absolute tolerances;
+    len(atol) == states.shape[1] == ideal_gas.nSpecies() + 1
+    rtol (1-D numpy.ndarray of floats): list of relative tolerances;
+    len(rtol) == states.shape[1] == ideal_gas.nSpecies() + 1
+    mass_stoich_prod (2-D numpy.ndarray of floats): product of diagonal
+    matrix of molar masses and stoichiometry matrix
+
+    Returns:
+    coeffs_temp (1-D numpy.ndarray of floats): coefficients for constraints
+        on error in time derivative of temperature
+    coeffs_y (2-D numpy.ndarray of floats): coefficients for constraints on
+        on error in time derivatives of species mass fractions
+    rhs_temp (float): right-hand side of constraints on error in time
+        derivative of temperature
+    rhs_y (1-D numpy.ndarray of floats): right-hand side of constraints on
+        error in time derivatives of species mass fractions 
+
+    Comments:
+    Could refactor this function to use the internal state of ideal_gas,
+    but the additional state argument was chosen to make the dependency
+    much more explicit.
+
+    """
+
+    (rxn_rate,
+     cp_mass,
+     enthalpy_mass,
+     rho) = calc_cond_dep_data(state, ideal_gas)
+    
+    coeffs_temp = numpy.dot(enthalpy_mass, numpy.dot(mass_stoich_prod,
+        numpy.diag(rxn_rate))) / (rho * cp_mass)
+    temp_dot = numpy.dot(coeffs_temp, rxn_rate)
+    rhs_temp = atol[0] + rtol[0] * abs(temp_dot)
+    
+    ydot = numpy.dot(mass_stoich_prod, rxn_rate) / rho
+    coeffs_y = numpy.dot(mass_stoich_prod, numpy.diag(rxn_rate)) / rho
+    rhs_y = atol[1:] + numpy.dot(abs(ydot), numpy.diag(rtol[1:]))
+
+    return coeffs_temp, coeffs_y, rhs_temp, rhs_y
+
 def reaction_elim(states, ideal_gas, atol, rtol):
     """
     Purpose: Carries out reaction elimination (Bhattacharjee, et al.,
@@ -52,6 +172,11 @@ def reaction_elim(states, ideal_gas, atol, rtol):
     copy the object.
     
     """
+    
+    # Convert lists to numpy.ndarrays because the data structure is useful
+    # for the operators.
+    atol = numpy.asarray(atol)
+    rtol = numpy.asarray(rtol)
 
     # Set up the lists needed for indexing
     rxn_list = range(0, ideal_gas.nReactions())
@@ -66,52 +191,37 @@ def reaction_elim(states, ideal_gas, atol, rtol):
                                 in rxn_strings]), "Number of reactions"
 
     # Calculate condition-independent data and store
-    molar_mass = ideal_gas.molarMasses()
-    stoich_matrix = ideal_gas.productStoichCoeffs() - \
-        ideal_gas.reactantStoichCoeffs()
-    mass_stoich_prod = numpy.dot(numpy.diag(molar_mass), stoich_matrix)
+    mass_stoich_prod = calc_cond_indep_data(ideal_gas)
     ideal_gas.setPressure(Cantera.OneAtm)
 
     # Add constraints: loop over data points
     for k in range(0, len(states)):
 
         # Calculate condition-dependent data
-        ideal_gas.setTemperature(states[k][0])
-        ideal_gas.setMassFractions(states[k][1:])
-        rxn_rate = ideal_gas.netRatesOfProgress()
-        cp_mass = ideal_gas.cp_mass()
-        enthalpy_mass = ideal_gas.enthalpies_RT() * \
-            ideal_gas.temperature() * Cantera.GasConstant
-        rho = ideal_gas.density()
+        (coeffs_temp, coeffs_y, rhs_temp,
+        rhs_y) = error_constraint_data(states[k],
+            ideal_gas, mass_stoich_prod, atol, rtol)
 
         # Add two temperature error constraints (lower, upper bounds)
-        coeffs_temp = numpy.dot(enthalpy_mass, mass_stoich_prod) / \
-            (rho * cp_mass)
-        temp_dot = numpy.dot(coeffs_temp, rxn_rate)
-        rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] * rxn_rate[i] *
-            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= \
-            -atol[0] - rtol[0] * abs(temp_dot), \
+        rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] *
+            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= -rhs_t, \
             "Temperature Error Lower Bound for Data Point " + str(k+1)
-        rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] * rxn_rate[i] *
-            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= \
-            atol[0] + rtol[0] * abs(temp_dot), \
+        rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] *
+            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= rhs_t, \
             "Temperature Error Upper Bound for Data Point " + str(k+1)
 
-        ydot = numpy.dot(mass_stoich_prod, rxn_rate) / rho
         # Add constraints: Loop over species mass fractions
         for j in range(0, ideal_gas.nSpecies()):
             
             # Add two species mass fraction error constraints (lower, upper
             # bounds)
-            rxn_elim_ILP += pulp.lpSum([mass_stoich_prod[j, i] *
-                (1 - z_var[rxn_strings[i]]) * rxn_rate[i] / rho
-                for i in rxn_list]) >= -atol[j + 1] - rtol[j + 1] * \
-                abs(ydot[j]), "Mass Fraction Species " + str(j+1) + \
+            rxn_elim_ILP += pulp.lpSum([coeffs_y[j, i] *
+                (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= -rhs_y[j], \
+                "Mass Fraction Species " + str(j+1) + \
                 " Error Lower Bound for Data Point " + str(k+1)
-            rxn_elim_ILP += pulp.lpSum([mass_stoich_prod[j, i] *
-                (1 - z_var[rxn_strings[i]]) * rxn_rate[i] / rho
-                for i in rxn_list]) <= atol[j + 1] + rtol[j + 1] * \
-                abs(ydot[j]), "Mass Fraction Species " + str(j+1) + \
+            rxn_elim_ILP += pulp.lpSum([coeffs_y[j, i] *
+                (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= rhs_y[j], \
+                "Mass Fraction Species " + str(j+1) + \
                 " Error Upper Bound for Data Point " + str(k+1)
 
     # Solve integer linear program
