@@ -1,5 +1,5 @@
 To Do List:
 
 - Add Combustion and Flame citation to reaction_elimination function comments
-- Add unit tests to reaction_elimination function
-- Possibly refactor reaction_elimination function?
+- Add species elimination functionality.
+- Add appropriate unit tests to species elimination
