@@ -204,10 +204,10 @@ def reaction_elim(states, ideal_gas, atol, rtol):
 
         # Add two temperature error constraints (lower, upper bounds)
         rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] *
-            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= -rhs_t, \
+            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= -rhs_temp, \
             "Temperature Error Lower Bound for Data Point " + str(k+1)
         rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] *
-            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= rhs_t, \
+            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= rhs_temp, \
             "Temperature Error Upper Bound for Data Point " + str(k+1)
 
         # Add constraints: Loop over species mass fractions
@@ -326,10 +326,10 @@ def reaction_and_species_elim(states, ideal_gas, atol, rtol):
 
         # Add two temperature error constraints (lower, upper bounds)
         rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] *
-            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= -rhs_t, \
+            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) >= -rhs_temp, \
             "Temperature Error Lower Bound for Data Point " + str(k+1)
         rxn_elim_ILP += pulp.lpSum([coeffs_temp[i] *
-            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= rhs_t, \
+            (1 - z_var[rxn_strings[i]]) for i in rxn_list]) <= rhs_temp, \
             "Temperature Error Upper Bound for Data Point " + str(k+1)
 
         # Add constraints: Loop over species mass fractions
