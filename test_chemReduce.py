@@ -24,7 +24,8 @@ class TestCoeffIdentities(unittest.TestCase):
         self.state[1:] = self.gas.massFractions()
 
         # Calculate condition-independent data and store
-        self.mass_stoich_prod = chemReduce.calc_cond_indep_data(self.gas)
+        (self.stoich_matrix,
+         self.mass_stoich_prod) = chemReduce.calc_cond_indep_data(self.gas)
 
         # Calculate condition-dependent data and store
         (self.rxn_rate,
@@ -35,8 +36,7 @@ class TestCoeffIdentities(unittest.TestCase):
         self.atol = numpy.ones(self.gas.nSpecies() + 1) * atol
         self.rtol = numpy.ones(self.gas.nSpecies() + 1) * rtol
 
-        self.float_tol = 1e-7
-        
+        self.float_tol = 1e-6
 
     def test_row_sums(self):
         """
@@ -59,7 +59,8 @@ class TestCoeffIdentities(unittest.TestCase):
 
         # Test identity for temperature
         rhs_temp_test = self.atol[0] + self.rtol[0] * numpy.sum(coeffs_temp)
-        self.assertAlmostEqual(rhs_temp_test, rhs_temp, delta=self.float_tol)
+        self.assertAlmostEqual(numpy.max(abs(rhs_temp_test - rhs_temp)), 0,
+                               delta=self.float_tol)
 
         # Test identity for each species
         rhs_y_test = numpy.zeros(self.gas.nSpecies())
@@ -69,7 +70,6 @@ class TestCoeffIdentities(unittest.TestCase):
 
         self.assertAlmostEqual(numpy.max(abs(rhs_y_test - rhs_y)), 0,
                                delta=self.float_tol)
-
 
     def test_col_sums(self):
         """
@@ -94,7 +94,6 @@ class TestCoeffIdentities(unittest.TestCase):
 
         self.assertAlmostEqual(numpy.max(abs(row_total - coeffs_temp)), 0,
                                delta = self.float_tol)
-
 
     def test_naive_summation(self):
         """
@@ -151,12 +150,46 @@ class TestCoeffIdentities(unittest.TestCase):
         self.assertAlmostEqual(numpy.max(abs(coeffs_y - coeffs_y_loop)), 0,
                                delta=self.float_tol)
 
+    def test_run_reaction_elim(self):
+        """
+        Purpose: Just run reaction_elim on a simple test case to make sure
+        there are no syntax errors.
+
+        Arguments:
+        None
+
+        Returns:
+        None
+
+        """
+        chemReduce.reaction_elim([self.state], self.gas, self.atol, self.rtol)
+
+
+    def test_run_reaction_and_species_elim(self):
+        """
+        Purpose: Just run reaction_and_species_elim on a simple test case
+        to make sure there are no syntax errors.
+
+        Arguments:
+        None
+
+        Returns:
+        None
+
+        """
+
+        chemReduce.reaction_and_species_elim([self.state], self.gas,
+                                             self.atol, self.rtol)
+
+
 if __name__ == '__main__':
     unittest.main()
     #suite = unittest.TestSuite()
     #suite.addTest(TestCoeffIdentities('test_naive_summation'))
     #suite.addTest(TestCoeffIdentities('test_col_sums'))
     #suite.addTest(TestCoeffIdentities('test_row_sums'))
+    #suite.addTest(TestCoeffIdentities('test_run_reaction_elim'))
+    #suite.addTest(TestCoeffIdentities('test_run_reaction_and_species_elim'))
     #suite.debug()
         
             
