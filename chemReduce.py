@@ -132,7 +132,8 @@ def error_constraint_data(state, ideal_gas, mass_stoich_prod, atol, rtol):
 
     return coeffs_temp, coeffs_y, rhs_temp, rhs_y
 
-def reaction_elim(states, ideal_gas, atol, rtol):
+def reaction_elim(states, ideal_gas, atol, rtol,
+                  lpsolver=pulp.solvers.GLPK_CMD()):
     """
     Purpose: Carries out reaction elimination (Bhattacharjee, et al.,
     Comb Flame, 2003) on the mechanism specified in ideal_gas at the
@@ -158,6 +159,25 @@ def reaction_elim(states, ideal_gas, atol, rtol):
     rtol (list of floats or 1-D numpy.ndarray of floats): list of
     relative tolerances; len(rtol) == states.shape[1] ==
     ideal_gas.nSpecies() + 1
+    lpsolver (pulp solver command): One of the solver commands listed
+    when running pulp.pulpTestAll(), such as:
+
+    pulp.solvers.PULP_CBC_CMD()
+    pulp.solvers.CPLEX_DLL()
+    pulp.solvers.CPLEX_CMD()
+    pulp.solvers.CPLEX_PY()
+    pulp.solvers.COIN_CMD()
+    pulp.solvers.COINMP_DLL()
+    pulp.solvers.GLPK_CMD()
+    pulp.solvers.XPRESS()
+    pulp.solvers.GUROBI()
+    pulp.solvers.GUROBI_CMD()
+    pulp.solvers.PYGLPK()
+    pulp.solvers.YAPOSIB()
+
+    These solvers also have optional arguments; see the PuLP documentation
+    for details. This argument allows one to change the solver and solver
+    options in the API call.
 
     Returns:
     z (list of ints, or 1-D numpy.ndarray of ints): binary variables
@@ -225,14 +245,15 @@ def reaction_elim(states, ideal_gas, atol, rtol):
                 " Error Upper Bound for Data Point " + str(k+1)
 
     # Solve integer linear program
-    rxn_elim_ILP.solve()
+    rxn_elim_ILP.solve(solver=lpsolver)
 
     # Return list of binary variables, solver status
     z = [int(z_var[i].value()) for i in rxn_strings]
     #z = [int(v.value()) for v in rxn_elim_ILP.variables()]
     return z, pulp.LpStatus[rxn_elim_ILP.status]
 
-def reaction_and_species_elim(states, ideal_gas, atol, rtol):
+def reaction_and_species_elim(states, ideal_gas, atol, rtol,
+                              lpsolver=pulp.solvers.GLPK_CMD()):
     """
     Purpose: Carries out simultaneous reaction and species
     elimination (Mitsos, et al.,Comb Flame, 2008;
@@ -263,6 +284,25 @@ def reaction_and_species_elim(states, ideal_gas, atol, rtol):
     rtol (list of floats or 1-D numpy.ndarray of floats): list of
     relative tolerances; len(rtol) == states.shape[1] ==
     ideal_gas.nSpecies() + 1
+    lpsolver (pulp solver command): One of the solver commands listed
+    when running pulp.pulpTestAll(), such as:
+
+    pulp.solvers.PULP_CBC_CMD()
+    pulp.solvers.CPLEX_DLL()
+    pulp.solvers.CPLEX_CMD()
+    pulp.solvers.CPLEX_PY()
+    pulp.solvers.COIN_CMD()
+    pulp.solvers.COINMP_DLL()
+    pulp.solvers.GLPK_CMD()
+    pulp.solvers.XPRESS()
+    pulp.solvers.GUROBI()
+    pulp.solvers.GUROBI_CMD()
+    pulp.solvers.PYGLPK()
+    pulp.solvers.YAPOSIB()
+
+    These solvers also have optional arguments; see the PuLP documentation
+    for details. This argument allows one to change the solver and solver
+    options in the API call.
 
     Returns:
     z (list of ints, or 1-D numpy.ndarray of ints): binary variables
@@ -347,7 +387,7 @@ def reaction_and_species_elim(states, ideal_gas, atol, rtol):
                 " Error Upper Bound for Data Point " + str(k+1)
 
     # Solve integer linear program
-    rxn_elim_ILP.solve()
+    rxn_elim_ILP.solve(solver=lpsolver)
 
     # Return list of binary variables, solver status
     z = [int(z_var[i].value()) for i in rxn_strings]
